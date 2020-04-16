@@ -1,17 +1,24 @@
 import os
-import random
 from twython import Twython
-import datetime
-import time
-from model import engine, Aswered
+from src.model import engine, Answered
 from sqlalchemy.orm import sessionmaker
 from dotenv import load_dotenv
+from src.storage import open_image
 
+"""
+loads environment variables of .env
+"""
 load_dotenv()
 
+"""
+ORM configurations
+"""
 Session = sessionmaker(bind=engine)
 session = Session()
 
+"""
+Config access to Twitter API
+"""
 consumer_key = os.getenv('consumer_key')
 consumer_secret = os.getenv('consumer_secret')
 access_token = os.getenv('access_token')
@@ -26,61 +33,53 @@ twitter = Twython(
     access_token_secret
 )
 
-def post_in_twitter(text='', image=None, tweet_id=''):
-    # This posts Tweets
-    message = text if text else 'Mensagem Padrão 2!'
-    message = f'{image} {message}'
-    photo = open(get_random_image(), 'rb')
-    response = twitter.upload_media(media=photo)
+
+def post_in_twitter(tweet_id, text='', ):
+    """
+    Create a new tweet
+    :param tweet_id: id string of Tweet to answer
+    :param text: text to include in the Tweet
+    """
+    response = twitter.upload_media(media=open_image())
     twitter.update_status(
-        status=message, in_reply_to_status_id=tweet_id, media_ids=[response['media_id']])
-    print("Tweeted: %s" % message)
-    # delay so that it doesn't look like the program is spamming Twitter
-
-
-def get_random_image():
-
-    for r, d, f in os.walk(images_path):
-        images = f
-
-    filename = f'{images_path}{random.choice(images)}'
-    return filename
-
-
-def search():
-
-    # Default count=20
-    results = twitter.get_mentions_timeline()
-    now = datetime.date.today()
-    now = str(now)
-    now = now.replace("-", "")
-    now = int(now)
-
-
-    for result in results:
-        id_post = result['id_str']
-        name = result['user']
-        creation_date = result['created_at']
-        screen_name = name['screen_name']
-
-        tweet_txt = result['text']
-        if(tweet_aswered(id_post)):
-            print(id_post)
-            continue
-        print('aquiii')
-        salve_answer(id_post)
-        # post_in_twitter(tweet_id=id_post)
+        status=text, in_reply_to_status_id=tweet_id, media_ids=[response['media_id']])
 
 
 def salve_answer(id_tweet):
-    aswered = Aswered(id_tweet=id_tweet)
-    session.add(aswered)
+    """
+    Save id of tweet answered
+    :param id_tweet: string id of tweet
+    """
+    answered = Answered(id_tweet=id_tweet)
+    session.add(answered)
     session.commit()
 
-def tweet_aswered(id_tweet):
-    query = session.query(Aswered).filter_by(id_tweet=id_tweet)
-    if(query.count() > 0): 
+
+def tweet_answered(id_tweet):
+    """
+    checks if the tweet has been answered
+    :param id_tweet: string id of tweet
+    :return: bool
+    """
+    query = session.query(Answered).filter_by(id_tweet=id_tweet)
+    if query.count() > 0:
         return True
     return False
 
-search()
+
+def search():
+    """
+    Find the last 20 tweets which the bot was mentioned
+    and answers those that have not been answered
+    :return:
+    """
+    results = twitter.get_mentions_timeline()
+
+    for result in results:
+        id_post = result['id_str']
+
+        if tweet_answered(id_post):
+            continue
+
+        post_in_twitter(id_post)
+        salve_answer(id_post)
